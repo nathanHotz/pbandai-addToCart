@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>P-Bandai Pre-order Watcher</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ───────────── SETUP SCREEN ───────────── -->
+    <section id="setup" class="screen">
+      <div class="card">
+        <div class="card-head">
+          <strong>P-Bandai Pre-order Watcher</strong>
+          <span class="subtle">Enter the item and its drop window — it's saved for next time.</span>
+        </div>
+
+        <label class="field">
+          <span>Item URL</span>
+          <input id="itemUrl" placeholder="https://p-bandai.com/us/item/N2890904001" />
+        </label>
+
+        <label class="field">
+          <span>Item number <em>(areaItemNo — looked up from the page)</em></span>
+          <div class="field-row">
+            <input id="sku" class="grow" placeholder="NAI0859145US" />
+            <button id="lookup" title="Load the item page and read the areaItemNo from it">Look up</button>
+          </div>
+        </label>
+
+        <div class="field-2col">
+          <label class="field">
+            <span>Drop time <em>(today, local)</em></span>
+            <input id="openIso" type="time" step="1" />
+          </label>
+          <label class="field">
+            <span>End time <em>(today, local)</em></span>
+            <input id="endIso" type="time" step="1" />
+          </label>
+        </div>
+
+        <div class="card-actions">
+          <span id="setupMsg" class="subtle"></span>
+          <button id="loginBtn" class="ghost" title="Sign in here — your login is passed to the watcher">Log in…</button>
+          <button id="browseBtn" class="ghost" title="Open the embedded browser to find a product">Browse site…</button>
+          <button id="startBtn" class="primary">Save &amp; Start Watching</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── WATCH SCREEN ───────────── -->
+    <div id="watch" class="screen hidden">
+      <header class="topbar">
+        <button id="backToSetup" class="ghost" title="Edit config">⚙ Setup</button>
+        <span id="status" class="status idle">idle</span>
+        <span id="countdown" class="countdown"></span>
+        <span id="token" class="token">token: —</span>
+        <button id="arm" class="primary">Arm</button>
+        <button id="stop">Stop</button>
+      </header>
+
+      <div class="navbar">
+        <button id="navBack" class="navbtn" title="Back">◀</button>
+        <button id="navFwd" class="navbtn" title="Forward">▶</button>
+        <button id="navReload" class="navbtn" title="Reload">⟳</button>
+        <button id="navHome" class="navbtn" title="Home">⌂</button>
+        <input id="addr" class="addr" placeholder="https://p-bandai.com/us/…" />
+        <button id="navGo">Go</button>
+        <button id="useUrl" title="Use the page you're on as the item to watch">Use this page</button>
+      </div>
+
+      <div class="spacer"><!-- embedded p-bandai.com view is drawn here --></div>
+
+      <footer class="log">
+        <pre id="logbox"></pre>
+      </footer>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

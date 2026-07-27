@@ -1,0 +1,15 @@
+{
+  "name": "pbandai-preorder-watcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Waits for a P-Bandai pre-order to open and adds the item to cart the moment the server allows it.",
+  "scripts": {
+    "inspect": "node preorder-watcher.mjs inspect",
+    "watch": "node preorder-watcher.mjs watch",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
