@@ -1,0 +1,4 @@
+node_modules/
+electron/node_modules/
+profile/
+*.log
