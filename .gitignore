@@ -1,4 +1,7 @@
 profile/
 *.log
-electron/node_modules/
 **/node_modules/
+profile-lookup/
+config.json
+dist/
+.browsers/

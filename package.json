@@ -1,15 +1,71 @@
 {
   "name": "pbandai-preorder-watcher",
+  "productName": "P-Bandai Watcher",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Waits for a P-Bandai pre-order to open and adds the item to cart the moment the server allows it.",
+  "author": "nhotz",
+  "main": "electron/main.mjs",
   "scripts": {
+    "start": "electron .",
+    "web": "node server.mjs",
     "inspect": "node preorder-watcher.mjs inspect",
     "watch": "node preorder-watcher.mjs watch",
-    "postinstall": "playwright install chromium"
+    "dist": "node scripts/fetch-browsers.mjs && electron-builder --publish never",
+    "postinstall": "playwright install chromium --no-shell"
   },
   "dependencies": {
-    "playwright": "^1.48.0"
+    "playwright": "1.48.0"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.nhotz.pbandai-watcher",
+    "productName": "P-Bandai Watcher",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**",
+      "web/**",
+      "server.mjs",
+      "preorder-watcher.mjs",
+      "package.json"
+    ],
+    "asar": false,
+    "extraResources": [
+      {
+        "from": ".browsers",
+        "to": "browsers"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
   }
 }

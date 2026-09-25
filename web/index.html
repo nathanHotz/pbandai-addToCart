@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P-Bandai Watcher</title>
+    <style>
+      :root {
+        --bg: #f6f7f9; --card: #fff; --fg: #1b1f24; --muted: #667085; --border: #d8dde3;
+        --accent: #2f6fed; --ok: #1a8f4c; --bad: #c8372d; --warn: #b7791f; --log-bg: #0f1419; --log-fg: #d7dde4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111418; --card: #1a1f25; --fg: #e6e9ed; --muted: #95a0ad; --border: #2c333c;
+          --accent: #5b8cff; --ok: #3cc47c; --bad: #ff6b60; --warn: #e5a93b; --log-bg: #0b0e12;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+      h1 { font-size: 20px; margin: 0; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: grid; gap: 14px; }
+      .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .head .grow { flex: 1; }
+      label { display: grid; gap: 4px; font-weight: 600; font-size: 13px; }
+      label em { font-weight: 400; color: var(--muted); font-style: normal; }
+      input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; min-width: 0; }
+      .row { display: flex; gap: 8px; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+      button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--fg); cursor: pointer; white-space: nowrap; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.danger { color: var(--bad); }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .actions .grow { flex: 1; }
+      .msg { color: var(--muted); font-size: 13px; }
+      .msg.err { color: var(--bad); }
+      details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+      details[open] summary { margin-bottom: 10px; }
+      .chip { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 999px; border: 1px solid currentColor; color: var(--muted); }
+      .chip.waiting, .chip.starting { color: var(--warn); }
+      .chip.polling { color: var(--accent); }
+      .chip.success { color: var(--ok); }
+      .chip.sold_out, .chip.error { color: var(--bad); }
+      .countdown { font-variant-numeric: tabular-nums; color: var(--muted); }
+      pre { margin: 0; background: var(--log-bg); color: var(--log-fg); border-radius: 8px; padding: 12px; height: 320px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="head">
+        <h1 class="grow">P-Bandai Pre-order Watcher</h1>
+        <span id="countdown" class="countdown"></span>
+        <span id="status" class="chip">idle</span>
+      </div>
+
+      <form id="form" class="card">
+        <label>Item URL
+          <input id="itemUrl" placeholder="https://p-bandai.com/us/item/N2890904001" required />
+        </label>
+        <label>Item number <em>(areaItemNo — differs from the code in the URL)</em>
+          <div class="row">
+            <input id="areaItemNo" placeholder="NAI0859145US" />
+            <button type="button" id="lookup">Look up</button>
+          </div>
+        </label>
+        <div class="cols">
+          <label>Drop time <em>(your local time)</em>
+            <input id="openIso" type="datetime-local" step="1" />
+          </label>
+          <label>End time <em>(blank = give-up window after drop)</em>
+            <input id="endIso" type="datetime-local" step="1" />
+          </label>
+        </div>
+        <details>
+          <summary>Advanced</summary>
+          <div class="cols">
+            <label>Poll interval <em>(ms)</em><input id="pollMs" type="number" min="250" step="50" /></label>
+            <label>Give-up window <em>(minutes, if no end time)</em><input id="giveUpMinutes" type="number" min="1" /></label>
+          </div>
+        </details>
+        <div id="msg" class="msg"></div>
+        <div class="actions">
+          <button type="button" id="save">Save</button>
+          <button type="button" id="login" title="Opens a Chromium window on p-bandai.com; your login is saved for the watcher">Log in…</button>
+          <span class="grow"></span>
+          <button type="button" id="stop" class="danger">Stop</button>
+          <button type="submit" id="start" class="primary">Save &amp; Start</button>
+        </div>
+      </form>
+
+      <div class="card">
+        <div class="head"><strong class="grow">Log</strong><button type="button" id="clear">Clear</button></div>
+        <pre id="log"></pre>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const FIELDS = ["itemUrl", "areaItemNo", "openIso", "endIso", "pollMs", "giveUpMinutes"];
+      const TIME_FIELDS = ["openIso", "endIso"];
+      let openAt = null;
+
+      // ISO with offset <-> <input type="datetime-local"> value, both in the browser's local time.
+      const pad = (n) => String(n).padStart(2, "0");
+      function toLocalInput(iso) {
+        const d = iso ? new Date(iso) : null;
+        if (!d || isNaN(d)) return "";
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }
+      function fromLocalInput(value) {
+        if (!value) return "";
+        const d = new Date(value);
+        const tz = -d.getTimezoneOffset();
+        const sign = tz < 0 ? "-" : "+";
+        return `${toLocalInput(d.toISOString())}${sign}${pad(Math.floor(Math.abs(tz) / 60))}:${pad(Math.abs(tz) % 60)}`;
+      }
+
+      function readForm() {
+        const out = {};
+        for (const k of FIELDS) out[k] = TIME_FIELDS.includes(k) ? fromLocalInput($(k).value) : $(k).value.trim();
+        return out;
+      }
+      function fillForm(cfg) {
+        for (const k of FIELDS) $(k).value = TIME_FIELDS.includes(k) ? toLocalInput(cfg[k]) : cfg[k] ?? "";
+        openAt = cfg.openIso ? Date.parse(cfg.openIso) : null;
+      }
+
+      function msg(text, isErr) {
+        $("msg").textContent = text || "";
+        $("msg").className = "msg" + (isErr ? " err" : "");
+      }
+
+      async function api(path, body) {
+        const res = await fetch(path, {
+          method: body === undefined ? "GET" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      async function save() {
+        const cfg = await api("/api/config", readForm());
+        openAt = cfg.openIso ? Date.parse(cfg.openIso) : null;
+        return cfg;
+      }
+
+      $("save").onclick = async () => {
+        try { await save(); msg("Saved to config.json."); } catch (e) { msg(e.message, true); }
+      };
+
+      $("lookup").onclick = async () => {
+        const itemUrl = $("itemUrl").value.trim();
+        if (!itemUrl) return msg("Enter the item URL first.", true);
+        msg("Looking up — a Chromium window opens briefly…");
+        try {
+          const d = await api("/api/lookup", { itemUrl });
+          const parts = [];
+          if (d.skus.length) {
+            $("areaItemNo").value = d.skus[d.skus.length - 1];
+            parts.push(`Item number → ${$("areaItemNo").value}` + (d.skus.length > 1 ? ` (also saw ${d.skus.slice(0, -1).join(", ")})` : ""));
+          } else parts.push("No item number found on the page — type it in by hand.");
+          if (d.iso.length) parts.push(`Times on page: ${d.iso.map((z) => new Date(z).toLocaleString()).join(", ")}`);
+          msg(parts.join(" · "));
+        } catch (e) { msg(e.message, true); }
+      };
+
+      $("login").onclick = async () => {
+        try { await api("/api/login", {}); msg("Sign in in the Chromium window. Your login is saved for the watcher."); }
+        catch (e) { msg(e.message, true); }
+      };
+
+      $("form").onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await api("/api/start", readForm());
+          msg("Watcher started — a Chromium window will open. Log in in its front tab if you aren't already.");
+        } catch (e) { msg(e.message, true); }
+      };
+
+      $("stop").onclick = () => api("/api/stop", {}).catch((e) => msg(e.message, true));
+      $("clear").onclick = () => ($("log").textContent = "");
+
+      function renderStatus(s) {
+        $("status").textContent = s.status.replace("_", " ");
+        $("status").className = "chip " + s.status;
+        $("start").disabled = s.running;
+        $("stop").disabled = !s.running;
+        $("login").disabled = s.running || s.loginOpen;
+        $("lookup").disabled = s.lookupBusy;
+      }
+
+      const logEl = $("log");
+      const events = new EventSource("/api/events");
+      events.addEventListener("status", (e) => renderStatus(JSON.parse(e.data)));
+      events.addEventListener("log", (e) => {
+        const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
+        logEl.textContent += (logEl.textContent ? "\n" : "") + JSON.parse(e.data);
+        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+      });
+      events.onerror = () => { $("status").textContent = "server offline"; $("status").className = "chip error"; };
+
+      setInterval(() => {
+        const ms = openAt ? openAt - Date.now() : 0;
+        if (ms <= 0) return ($("countdown").textContent = "");
+        const s = Math.floor(ms / 1000);
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+        $("countdown").textContent = `opens in ${h ? h + "h " : ""}${m}m ${pad(s % 60)}s`;
+      }, 500);
+
+      api("/api/config").then(fillForm).catch((e) => msg(e.message, true));
+    </script>
+  </body>
+</html>

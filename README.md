@@ -4,10 +4,12 @@ Waits for a P-Bandai pre-order to open and adds the item to your cart the instan
 server allows it — so you're not beaten by the page being slow to re-render its button
 during the traffic rush at drop time.
 
-There are two front-ends over the same watch engine:
+It ships as a **self-contained desktop app** (Electron + a bundled Chromium, nothing else to
+install). The same settings page also runs as a plain local web UI, and the engine underneath is
+a command-line script:
 
-- **Desktop app** (`electron/`) — a point-and-click GUI. **Recommended.** See
-  [`electron/README.md`](electron/README.md).
+- **Desktop app** — download/build it, double-click, configure in the window. **Recommended.**
+- **Web UI** (`npm run web`) — the same page in your normal browser at `http://localhost:3131`.
 - **Command line** (`preorder-watcher.mjs`) — a terminal script driven by a `config.json`.
 
 ## What it does (and doesn't) do
@@ -28,17 +30,69 @@ isn't open, the server returns `CouldNotAddToCartBySuspendedItem` and the tool k
 
 ## Desktop app (recommended)
 
+### Install
+
+Grab the build for your OS (from the repo's **Actions → Build app** run artifacts, or build it
+yourself below) and install it:
+
+- **macOS** — open the `.dmg` and drag *P-Bandai Watcher* to Applications. It isn't code-signed,
+  so the first time: right-click the app → **Open** → **Open** (or run
+  `xattr -cr "/Applications/P-Bandai Watcher.app"`).
+- **Windows** — run the `Setup` `.exe`, or use the `portable` `.exe` with no install. SmartScreen
+  may warn about an unknown publisher: **More info → Run anyway**.
+- **Linux** — `chmod +x` the `.AppImage` and run it. On distros that restrict unprivileged user
+  namespaces (e.g. Ubuntu 24.04+), launch it with `--no-sandbox` if it won't start.
+
+### Use
+
+Everything is set in the app window:
+
+1. **Item URL** → click **Look up** to read the real item number (`areaItemNo`) off the page
+   (a Chromium window opens briefly to load it). The page's own timestamps are shown for reference.
+2. **Drop time / End time** — date + time pickers in your local time zone.
+3. **Log in…** opens a Chromium window on p-bandai.com. Sign in there; the login is saved and
+   reused by the watcher. (You can also just log in in the watcher's window.)
+4. **Save & Start** saves your settings and launches the watcher in its own Chromium window. Its
+   log streams into the app, with a status chip and a countdown. **Stop** ends it.
+
+Quitting the app stops the watcher (it asks first if one is running). Settings and your login
+live in the per-user app data folder — `~/Library/Application Support/P-Bandai Watcher` on
+macOS, `%APPDATA%\P-Bandai Watcher` on Windows, `~/.config/P-Bandai Watcher` on Linux.
+
+### Build it
+
 ```bash
-npm install       # repo root — Playwright + Chromium (via the postinstall hook)
-cd electron
-npm install       # Electron
-npm start
+npm install       # Electron, electron-builder, Playwright
+npm start         # run the app from source (settings/login go in the repo: ./config.json, ./profile)
+npm run dist      # bundle Chromium + package → dist/ (.dmg / .exe / .AppImage)
 ```
 
-Full walkthrough in [`electron/README.md`](electron/README.md). In short: fill the setup form
-(item URL, item number, drop/end time), log in (in the app or the watcher window), and
-**Save & Start Watching** — no config file to edit. The app runs the CLI engine below as a
-background process.
+`npm run dist` builds for the OS you run it on only — Playwright downloads the Chromium for the
+current platform, so each platform's app must be built on that platform. The
+[`Build app`](.github/workflows/build.yml) GitHub Actions workflow does all three: run it from
+the Actions tab (or push a `v*` tag) and download the installers from the run's artifacts.
+
+### How it fits together
+
+- `electron/main.mjs` starts the web server (`server.mjs`) on a random localhost port and shows
+  it in the app window. In the packaged app it points Playwright at the bundled Chromium.
+- `server.mjs` serves the settings page (`web/index.html`), runs **Look up** / **Log in** with
+  Playwright, and runs `preorder-watcher.mjs watch` as a subprocess, streaming its log to the page.
+  The subprocess runs on Electron's built-in Node (`ELECTRON_RUN_AS_NODE`), so no Node install is
+  needed.
+
+## Web UI
+
+The same page without Electron, in your normal browser (needs Node):
+
+```bash
+npm install
+npm run web       # opens http://localhost:3131
+```
+
+It uses `./config.json` and `./profile` in the repo. The server listens on `127.0.0.1` only. Set
+`PORT` to change the port, or `NO_OPEN=1` to skip opening the browser. Closing the tab doesn't stop
+the watcher — hit **Stop** or quit the server (Ctrl+C).
 
 ## Command line
 
