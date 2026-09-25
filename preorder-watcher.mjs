@@ -19,9 +19,10 @@
  */
 
 import { chromium } from "playwright";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const DEFAULTS = {
+export const DEFAULTS = {
   itemUrl: "https://p-bandai.com/us/item/CHANGE_ME",
   areaItemNo: "", // e.g. NAI0859145US — leave blank and use `inspect` to detect it
   qty: 1,
@@ -79,7 +80,9 @@ function loadConfig(configPath) {
   return { ...DEFAULTS, ...fileCfg };
 }
 
-async function launch(cfg) {
+const openContexts = new Set(); // closed on a stop request so no Chromium is left behind
+
+export async function launch(cfg) {
   const context = await chromium.launchPersistentContext(cfg.userDataDir, {
     headless: cfg.headless,
     args: ["--disable-blink-features=AutomationControlled"],
@@ -111,6 +114,8 @@ async function launch(cfg) {
     const t = req.headers()["x-csrf-token"];
     if (t) state.token = t;
   });
+  openContexts.add(context);
+  context.on("close", () => openContexts.delete(context));
   return { context, state };
 }
 
@@ -118,7 +123,7 @@ async function launch(cfg) {
  * Cold profiles get the "PAGE NOT AVAILABLE" bot wall on a direct item hit — warm up via the
  * homepage first to seed cookies, then load the item and scroll to trigger the token-bearing XHR.
  */
-async function warmUpAndCaptureToken(page, cfg, state) {
+export async function warmUpAndCaptureToken(page, cfg, state) {
   await page
     .goto(cfg.homeUrl, { waitUntil: "domcontentloaded", timeout: 60000 })
     .catch(() => {});
@@ -136,12 +141,9 @@ async function warmUpAndCaptureToken(page, cfg, state) {
   return state.token;
 }
 
-async function inspect(cfg) {
-  const { context, state } = await launch(cfg);
-  const page = context.pages()[0] || (await context.newPage());
-  await warmUpAndCaptureToken(page, cfg, state);
-
-  const found = await page.evaluate(() => {
+/** Read the SKU candidates, schedule text, and ISO timestamps off a loaded item page. */
+export function scrapeItem(page) {
+  return page.evaluate(() => {
     const html = document.documentElement.innerHTML;
     const skus = [...new Set(html.match(/[A-Z]{3}\d{6,}US/g) || [])];
     const body = (document.body.innerText || "")
@@ -160,6 +162,14 @@ async function inspect(cfg) {
     ];
     return { title: document.title, skus, schedule, iso };
   });
+}
+
+async function inspect(cfg) {
+  const { context, state } = await launch(cfg);
+  const page = context.pages()[0] || (await context.newPage());
+  await warmUpAndCaptureToken(page, cfg, state);
+
+  const found = await scrapeItem(page);
 
   log("Title:", found.title);
   log(
@@ -335,7 +345,29 @@ function classify(res) {
   return OUTCOME.TRANSIENT;
 }
 
-main().catch((e) => {
-  log("FATAL", e);
-  process.exit(1);
-});
+// Run as a CLI only when executed directly — server.mjs imports the helpers above.
+const invokedDirectly =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+if (invokedDirectly) {
+  // Stop cleanly: close the browser, then exit. Playwright's own SIGTERM handler only closes the
+  // browser and leaves this loop running, so handle it ourselves. The app sends "stop" over IPC
+  // instead of a signal, since Windows can't deliver SIGTERM (it would hard-kill and orphan Chromium).
+  let stopping = false;
+  const stop = async (why) => {
+    if (stopping) return;
+    stopping = true;
+    log(`stop requested (${why}) — closing browser`);
+    await Promise.all([...openContexts].map((c) => c.close().catch(() => {})));
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => stop("SIGTERM"));
+  process.on("SIGINT", () => stop("SIGINT"));
+  process.on("message", (m) => m === "stop" && stop("app"));
+  process.channel?.unref(); // an open IPC channel must not keep the process alive after main() ends
+
+  main().catch((e) => {
+    log("FATAL", e);
+    process.exit(1);
+  });
+}
