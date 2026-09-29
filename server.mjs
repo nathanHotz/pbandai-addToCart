@@ -86,11 +86,33 @@ function snapshot() {
   return { status, running: !!child, loginOpen: !!loginContext, lookupBusy };
 }
 
+// ── login cookies ───────────────────────────────────────────────
+// P-Bandai's login (SESSION) is a session cookie, and Chromium drops session cookies when a
+// profile is reopened — so the watcher's relaunch of ./profile comes up logged out. Snapshot the
+// login window's cookies and hand them to the watcher via config.cookies instead. Akamai
+// bot-manager cookies are fingerprint-bound and must be minted fresh, so they're left out.
+const AKAMAI_COOKIE = /^(_abck|bm_.*|ak_bmsc)$/;
+let loginCookies = null; // latest snapshot from the open login window
+
+async function snapshotLoginCookies(ctx) {
+  const all = await ctx.cookies().catch(() => null);
+  if (all) loginCookies = all.filter((c) => c.domain.includes("p-bandai.com") && !AKAMAI_COOKIE.test(c.name));
+}
+
+function persistLoginCookies() {
+  if (!loginCookies?.length) return;
+  const cfg = loadConfig();
+  cfg.cookies = loginCookies;
+  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + "\n");
+  loginCookies = null;
+}
+
 // ── actions ─────────────────────────────────────────────────────
 async function closeLogin() {
   if (!loginContext) return;
   const ctx = loginContext;
   loginContext = null;
+  await snapshotLoginCookies(ctx);
   await ctx.close().catch(() => {});
 }
 
@@ -100,9 +122,14 @@ async function openLogin() {
   const cfg = { ...DEFAULTS, ...loadConfig(), userDataDir: PROFILE_DIR };
   const { context } = await launch(cfg);
   loginContext = context;
+  // The user may close the window themselves, after which cookies can't be read — so keep a
+  // running snapshot rather than only grabbing them on close.
+  const timer = setInterval(() => snapshotLoginCookies(context), 2000);
   context.on("close", () => {
+    clearInterval(timer);
     if (loginContext === context) loginContext = null;
-    note("login window closed — your session is saved in ./profile");
+    persistLoginCookies();
+    note("login window closed — your session is saved for the watcher");
     broadcast("status", snapshot());
   });
   const page = context.pages()[0] || (await context.newPage());
@@ -138,6 +165,7 @@ async function startWatcher(input) {
   const cfg = saveConfig(input);
   if (!cfg.areaItemNo) throw new Error("an item number (areaItemNo) is required");
   await closeLogin(); // the watcher needs the profile the login window has locked
+  persistLoginCookies(); // make sure config.json has them before the watcher reads it
 
   note("config saved — starting the watcher (a Chromium window will open)");
   // process.execPath is node — or, in the desktop app, Electron, which ELECTRON_RUN_AS_NODE turns
