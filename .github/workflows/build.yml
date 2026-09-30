@@ -1,11 +1,16 @@
 # Builds the desktop app for each OS. Each build bundles the Chromium for its own platform, so
-# every platform has to be built on that platform. Run it from the Actions tab, or push a v* tag.
+# every platform has to be built on that platform. Run it from the Actions tab for a test build;
+# the Release workflow also calls it to build the binaries it publishes.
 name: Build app
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (e.g. 1.2.3)
+        type: string
+        required: false
 
 jobs:
   build:
@@ -21,6 +26,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # When releasing, stamp the release version into package.json so the installer file
+      # names match the release.
+      - if: inputs.version != ''
+        shell: bash
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false" # no signing certificate — build unsigned
